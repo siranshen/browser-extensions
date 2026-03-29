@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Toggle JavaScript",
+  "version": "1.0",
+  "description": "Toggle JavaScript on/off for each individual page with one click.",
+  "permissions": [
+    "contentSettings",
+    "activeTab",
+    "tabs",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/js-on-16.png",
+      "48": "icons/js-on-48.png",
+      "128": "icons/js-on-128.png"
+    },
+    "default_title": "Toggle JavaScript"
+  },
+  "icons": {
+    "16": "icons/js-on-16.png",
+    "48": "icons/js-on-48.png",
+    "128": "icons/js-on-128.png"
+  }
+}

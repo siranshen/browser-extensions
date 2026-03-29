@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 300px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      padding: 20px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .header-icon { font-size: 24px; }
+    .header h1 { font-size: 16px; font-weight: 600; }
+
+    /* Current site */
+    .site-card {
+      background: #16213e;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+    }
+    .site-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .site-domain {
+      font-size: 14px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .site-status {
+      font-size: 11px;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+    .site-status.enabled {
+      background: rgba(46, 204, 113, 0.15);
+      color: #2ecc71;
+    }
+    .site-status.disabled {
+      background: rgba(231, 76, 60, 0.15);
+      color: #e74c3c;
+    }
+
+    /* Toggle button */
+    .toggle-btn {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      margin-bottom: 16px;
+    }
+    .toggle-btn:active { transform: scale(0.98); }
+    .toggle-btn.disable {
+      background: #e74c3c;
+      color: white;
+    }
+    .toggle-btn.disable:hover { background: #c0392b; }
+    .toggle-btn.enable {
+      background: #2ecc71;
+      color: #1a1a2e;
+    }
+    .toggle-btn.enable:hover { background: #27ae60; }
+
+    /* Blacklist */
+    .blacklist-section {
+      background: #16213e;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .blacklist-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .blacklist-header:hover { background: rgba(255,255,255,0.03); }
+    .blacklist-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ccc;
+    }
+    .blacklist-count {
+      font-size: 11px;
+      color: #888;
+      background: rgba(255,255,255,0.08);
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+    .chevron {
+      font-size: 10px;
+      color: #888;
+      transition: transform 0.2s;
+      margin-left: 8px;
+    }
+    .chevron.open { transform: rotate(90deg); }
+    .blacklist-list {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    .blacklist-list.open {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    .blacklist-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .blacklist-item-domain {
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .blacklist-item-remove {
+      background: none;
+      border: none;
+      color: #2ecc71;
+      font-size: 16px;
+      cursor: pointer;
+      padding: 0 4px;
+      opacity: 0.6;
+      transition: opacity 0.2s;
+      flex-shrink: 0;
+    }
+    .blacklist-item-remove:hover { opacity: 1; }
+    .no-site {
+      color: #666;
+      font-style: italic;
+      font-size: 13px;
+      text-align: center;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <span class="header-icon">⚡</span>
+    <h1>Toggle JavaScript</h1>
+  </div>
+
+  <div id="siteSection" style="display: none;">
+    <div class="site-card">
+      <div class="site-label">Current site</div>
+      <div class="site-domain" id="siteDomain"></div>
+      <div class="site-status enabled" id="siteStatus">✓ JavaScript enabled</div>
+    </div>
+    <button class="toggle-btn disable" id="toggleBtn">Disable JavaScript</button>
+  </div>
+
+  <div id="noSite" class="no-site" style="display: none;">
+    Open a website to toggle its JavaScript.
+  </div>
+
+  <div class="blacklist-section" id="blacklistSection" style="display: none;">
+    <div class="blacklist-header" id="blacklistHeader">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <span class="blacklist-title">JS disabled on</span>
+        <span class="blacklist-count" id="blacklistCount">0</span>
+      </div>
+      <span class="chevron" id="chevron">▶</span>
+    </div>
+    <div class="blacklist-list" id="blacklistList"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
