@@ -51,11 +51,6 @@ function renderWhitelist(whitelist) {
   whitelistSection.style.display = "block";
   whitelistList.innerHTML = "";
 
-  if (whitelist.length === 0) {
-    whitelistList.innerHTML = '<div class="whitelist-empty">No whitelisted sites</div>';
-    return;
-  }
-
   whitelist
     .slice()
     .sort()
@@ -102,18 +97,18 @@ function refreshWhitelist() {
 
 // Get the active tab
 chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-  console.log("[Popup] tabs query result:", tabs);
+  // console.log("[Popup] tabs query result:", tabs);
   if (!tabs[0]) return;
   const tab = tabs[0];
   currentTabId = tab.id;
-  console.log("[Popup] active tab:", tab.id, tab.url);
+  // console.log("[Popup] active tab:", tab.id, tab.url);
 
   // Show blocked count
-  console.log("[Popup] sending getBlockedCount for tab:", tab.id);
+  // console.log("[Popup] sending getBlockedCount for tab:", tab.id);
   chrome.runtime.sendMessage(
     { type: "getBlockedCount", tabId: tab.id },
     (res) => {
-      console.log("[Popup] getBlockedCount response:", res);
+      // console.log("[Popup] getBlockedCount response:", res);
       const count = res?.count || 0;
       countEl.textContent = count;
       if (count > 0) countEl.classList.remove("zero");

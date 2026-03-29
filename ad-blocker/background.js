@@ -181,23 +181,17 @@ async function syncWhitelistRules() {
   const whitelist = await getWhitelist();
 
   const existingRules = await chrome.declarativeNetRequest.getDynamicRules();
-  const removeIds = existingRules.map((r) => r.id);
+  const removeIds = existingRules
+    .filter((r) => r.id >= WHITELIST_ID_BASE)
+    .map((r) => r.id);
 
   const addRules = whitelist.map((domain, i) => ({
     id: WHITELIST_ID_BASE + i,
     priority: 2,
     action: { type: "allowAllRequests" },
     condition: {
-      initiatorDomains: [domain],
-      resourceTypes: [
-        "main_frame",
-        "sub_frame",
-        "script",
-        "image",
-        "xmlhttprequest",
-        "media",
-        "other",
-      ],
+      requestDomains: [domain],
+      resourceTypes: ["main_frame", "sub_frame"],
     },
   }));
 
@@ -208,7 +202,7 @@ async function syncWhitelistRules() {
 }
 
 // Sync whitelist rules on startup in case storage and dynamic rules drifted
-syncWhitelistRules();
+syncWhitelistRules().catch(() => {});
 
 async function addToWhitelist(domain) {
   const whitelist = await getWhitelist();
@@ -252,13 +246,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "setEnabled") {
     const enabled = message.enabled;
-    chrome.storage.local.set({ enabled });
     chrome.declarativeNetRequest
       .updateEnabledRulesets({
         enableRulesetIds: enabled ? ["default_rules"] : [],
         disableRulesetIds: enabled ? [] : ["default_rules"],
       })
-      .then(() => sendResponse({ success: true }));
+      .then(() => {
+        chrome.storage.local.set({ enabled });
+        sendResponse({ success: true });
+      })
+      .catch(() => sendResponse({ success: false }));
     return true;
   }
 

@@ -36,13 +36,15 @@
   window.addEventListener("message", (e) => {
     if (e.data?.source !== "adblocker-main") return;
     if (e.data.type === "clickContext") {
-      chrome.runtime.sendMessage({
-        type: "clickContext",
-        element: e.data.element,
-        isInteractive: e.data.isInteractive,
-        linkHref: e.data.linkHref,
-        timestamp: e.data.timestamp,
-      });
+      try {
+        chrome.runtime.sendMessage({
+          type: "clickContext",
+          element: e.data.element,
+          isInteractive: e.data.isInteractive,
+          linkHref: e.data.linkHref,
+          timestamp: e.data.timestamp,
+        });
+      } catch {}
     }
   });
 })();
