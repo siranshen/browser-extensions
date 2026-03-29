@@ -79,7 +79,7 @@ function renderWhitelist(whitelist) {
               isWhitelisted = false;
               updateSiteUI();
               // Reload tab so blocks take effect
-              if (currentTabId) chrome.tabs.reload(currentTabId);
+              if (currentTabId != null) chrome.tabs.reload(currentTabId);
             }
             refreshWhitelist();
           }
@@ -151,7 +151,7 @@ globalToggle.addEventListener("change", () => {
     type: "setEnabled",
     enabled: globalToggle.checked,
   }, () => {
-    if (currentTabId) chrome.tabs.reload(currentTabId);
+    if (currentTabId != null) chrome.tabs.reload(currentTabId);
   });
 });
 
@@ -167,7 +167,7 @@ whitelistBtn.addEventListener("click", () => {
         updateSiteUI();
         refreshWhitelist();
         // Reload tab so blocks take effect
-        if (currentTabId) chrome.tabs.reload(currentTabId);
+        if (currentTabId != null) chrome.tabs.reload(currentTabId);
       }
     );
   } else {
@@ -180,7 +180,7 @@ whitelistBtn.addEventListener("click", () => {
         updateSiteUI();
         refreshWhitelist();
         // Reload tab so ads can load
-        if (currentTabId) chrome.tabs.reload(currentTabId);
+        if (currentTabId != null) chrome.tabs.reload(currentTabId);
       }
     );
   }

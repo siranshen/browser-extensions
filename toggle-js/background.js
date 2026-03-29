@@ -105,13 +105,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "removeBlacklist") {
     const { domain } = message;
-    // Re-enable JS for this domain
-    const url = `https://${domain}/`;
+    // Re-enable JS for this domain on both http and https
+    const httpsUrl = `https://${domain}/`;
+    const httpUrl = `http://${domain}/`;
     chrome.contentSettings.javascript.set(
-      { primaryPattern: originPattern(url), setting: "allow" },
-      async () => {
-        await removeFromBlacklist(domain);
-        sendResponse({ success: true });
+      { primaryPattern: originPattern(httpsUrl), setting: "allow" },
+      () => {
+        chrome.contentSettings.javascript.set(
+          { primaryPattern: originPattern(httpUrl), setting: "allow" },
+          async () => {
+            await removeFromBlacklist(domain);
+            sendResponse({ success: true });
+          }
+        );
       }
     );
     return true;

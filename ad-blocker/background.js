@@ -14,10 +14,7 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
 
   // Check if ad blocking is globally enabled
   const { enabled } = await chrome.storage.local.get("enabled");
-  if (enabled === false) {
-    // console.log("[Ad Blocker] ⏭ Pop-up tab ignored — ad blocker is off globally");
-    return;
-  }
+  if (enabled === false) return;
 
   // Check if the source tab's site is whitelisted
   let sourceHost = null;
@@ -25,10 +22,7 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
     const sourceTab = await chrome.tabs.get(sourceTabId);
     sourceHost = new URL(sourceTab.url).hostname;
     const whitelist = await getWhitelist();
-    if (whitelist.includes(sourceHost)) {
-      // console.log("[Ad Blocker] ⏭ Pop-up tab ignored — source site whitelisted:", sourceHost);
-      return;
-    }
+    if (whitelist.includes(sourceHost)) return;
   } catch {}
 
   // Get click context from content script
@@ -36,22 +30,8 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
   const clickAge = clickCtx ? Date.now() - clickCtx.timestamp : Infinity;
   const recentClick = clickAge < 2000;
 
-  // console.log("[Ad Blocker] 🔍 New tab opened:", {
-  //   url: url || "about:blank",
-  //   sourceTab: sourceTabId,
-  //   sourceHost,
-  //   clickContext: recentClick
-  //     ? { element: clickCtx.element, isInteractive: clickCtx.isInteractive, linkHref: clickCtx.linkHref }
-  //     : "no recent click",
-  // });
-
-  if (!recentClick) {
-    // console.log("[Ad Blocker] ⚠️ No recent click context — falling through to domain check only");
-  }
-
   // BLOCK: recent click was on a non-interactive element → pop-up ad
   if (recentClick && !clickCtx.isInteractive) {
-    // console.log("[Ad Blocker] 🚫 Closed pop-up tab — triggered by non-interactive click on:", clickCtx.element, "→", url);
     chrome.tabs.remove(details.tabId);
     return;
   }
@@ -62,7 +42,6 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
       const linkHost = new URL(clickCtx.linkHref).hostname;
       const popupHost = new URL(url).hostname;
       if (linkHost !== popupHost && sourceHost !== popupHost) {
-        // console.log("[Ad Blocker] 🚫 Closed hijacked pop-up — clicked link →", linkHost, "but tab opened →", popupHost);
         chrome.tabs.remove(details.tabId);
         return;
       }
@@ -70,19 +49,21 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
   }
 
   if (!url || url === "about:blank") {
-    // console.log("[Ad Blocker] 🔍 Monitoring about:blank pop-up tab:", details.tabId);
     setTimeout(async () => {
       try {
         const tab = await chrome.tabs.get(details.tabId);
         if (tab.url && tab.url !== "about:blank") {
-          const matches = await chrome.declarativeNetRequest.getMatchedRules({
-            tabId: details.tabId,
+          // Check if the tab's main URL is on a blocked domain
+          const outcome = await chrome.declarativeNetRequest.testMatchOutcome({
+            url: tab.url,
+            type: "sub_frame",
+            initiator: tab.url,
           });
-          if (matches.rulesMatchedInfo.length > 0) {
-            // console.log("[Ad Blocker] 🚫 Closed pop-up tab that redirected to blocked domain:", tab.url);
+          const blocked = outcome.matchedRules.some(
+            (r) => r.action?.type === "block"
+          );
+          if (blocked) {
             chrome.tabs.remove(details.tabId);
-          } else {
-            // console.log("[Ad Blocker] ✅ about:blank pop-up allowed — redirected to:", tab.url);
           }
         }
       } catch {}
@@ -90,19 +71,18 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
     return;
   }
 
-  // For non-blank URLs, also check against domain blocklist
+  // For non-blank URLs, check against domain blocklist
   try {
     const matches = await chrome.declarativeNetRequest.testMatchOutcome({
       url,
       type: "sub_frame",
       initiator: new URL((await chrome.tabs.get(sourceTabId)).url).origin,
     });
-    const blocked = matches.matchedRules.some((r) => r.action?.type === "block");
+    const blocked = matches.matchedRules.some(
+      (r) => r.action?.type === "block"
+    );
     if (blocked) {
-      // console.log("[Ad Blocker] 🚫 Closed pop-up tab to blocked domain:", url);
       chrome.tabs.remove(details.tabId);
-    } else {
-      // console.log("[Ad Blocker] ✅ Pop-up tab allowed:", url);
     }
   } catch {}
 });
@@ -122,10 +102,21 @@ function updateBadge(tabId) {
   chrome.action.setBadgeBackgroundColor({ color: "#e74c3c", tabId });
 }
 
-// Live event listener — counts blocks as they happen
-chrome.declarativeNetRequest.onRuleMatchedDebug.addListener((info) => {
+// Live event listener — counts blocks as they happen.
+// Skip counting on whitelisted sites (the rule still "matches"
+// but is overridden by the higher-priority allow rule).
+chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(async (info) => {
   const tabId = info.request.tabId;
   if (tabId < 0) return;
+
+  // Check if this tab's site is whitelisted
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const host = new URL(tab.url).hostname;
+    const whitelist = await getWhitelist();
+    if (whitelist.includes(host)) return;
+  } catch {}
+
   blockedCounts[tabId] = (blockedCounts[tabId] || 0) + 1;
   updateBadge(tabId);
 });
@@ -143,24 +134,32 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 chrome.tabs.onRemoved.addListener((tabId) => {
   delete blockedCounts[tabId];
   delete catchUpDone[tabId];
+  delete lastClickContext[tabId];
 });
 
 // One-time catch-up: if the service worker was asleep and missed
 // events, ask Chrome for the real count. Only called from popup.
 async function getCountForTab(tabId) {
+  // If whitelisted, always return 0
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const host = new URL(tab.url).hostname;
+    const whitelist = await getWhitelist();
+    if (whitelist.includes(host)) return 0;
+  } catch {}
+
   if (!catchUpDone[tabId]) {
     try {
-      const result = await chrome.declarativeNetRequest.getMatchedRules({ tabId });
+      const result = await chrome.declarativeNetRequest.getMatchedRules({
+        tabId,
+      });
       const apiCount = result.rulesMatchedInfo.length;
-      // Use whichever is higher — the live count or the API count
       if (apiCount > (blockedCounts[tabId] || 0)) {
         blockedCounts[tabId] = apiCount;
         updateBadge(tabId);
       }
       catchUpDone[tabId] = true;
-    } catch (err) {
-      // console.warn("[AdBlocker] getMatchedRules catch-up failed:", err.message);
-    }
+    } catch {}
   }
   return blockedCounts[tabId] || 0;
 }
@@ -208,6 +207,9 @@ async function syncWhitelistRules() {
   });
 }
 
+// Sync whitelist rules on startup in case storage and dynamic rules drifted
+syncWhitelistRules();
+
 async function addToWhitelist(domain) {
   const whitelist = await getWhitelist();
   if (!whitelist.includes(domain)) {
@@ -227,16 +229,11 @@ async function removeFromWhitelist(domain) {
 // --- Message handling ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Store click context from content script
+  // Store click context from content script (via postMessage bridge)
   if (message.type === "clickContext") {
     const tabId = sender.tab?.id;
-    if (tabId) {
+    if (tabId != null) {
       lastClickContext[tabId] = message;
-      // console.log("[Ad Blocker] 📌 Click context received from tab", tabId + ":", {
-      //   element: message.element,
-      //   isInteractive: message.isInteractive,
-      //   linkHref: message.linkHref,
-      // });
     }
     return;
   }
@@ -256,12 +253,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "setEnabled") {
     const enabled = message.enabled;
     chrome.storage.local.set({ enabled });
-    chrome.declarativeNetRequest.updateEnabledRulesets({
-      enableRulesetIds: enabled ? ["default_rules"] : [],
-      disableRulesetIds: enabled ? [] : ["default_rules"],
-    });
-    sendResponse({ success: true });
-    return;
+    chrome.declarativeNetRequest
+      .updateEnabledRulesets({
+        enableRulesetIds: enabled ? ["default_rules"] : [],
+        disableRulesetIds: enabled ? [] : ["default_rules"],
+      })
+      .then(() => sendResponse({ success: true }));
+    return true;
   }
 
   if (message.type === "getWhitelist") {
