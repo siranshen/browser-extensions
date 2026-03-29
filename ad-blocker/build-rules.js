@@ -118,8 +118,6 @@ async function main() {
           "sub_frame",
           "xmlhttprequest",
           "media",
-          "stylesheet",
-          "font",
           "ping",
           "other",
         ],

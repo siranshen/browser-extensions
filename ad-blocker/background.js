@@ -1,3 +1,112 @@
+// --- Click context from content script ────────────────────────────
+// The content script sends us what the user clicked, so we can make
+// better decisions about pop-up tabs.
+
+const lastClickContext = {}; // keyed by tabId
+
+// --- Pop-up tab blocking (safety net) ─────────────────────────────
+// Catches new tabs/windows opened by pages that the content script missed.
+// Uses click context + domain blocklist.
+
+chrome.webNavigation.onCreatedNavigationTarget.addListener(async (details) => {
+  const url = details.url;
+  const sourceTabId = details.sourceTabId;
+
+  // Check if ad blocking is globally enabled
+  const { enabled } = await chrome.storage.local.get("enabled");
+  if (enabled === false) {
+    // console.log("[Ad Blocker] ⏭ Pop-up tab ignored — ad blocker is off globally");
+    return;
+  }
+
+  // Check if the source tab's site is whitelisted
+  let sourceHost = null;
+  try {
+    const sourceTab = await chrome.tabs.get(sourceTabId);
+    sourceHost = new URL(sourceTab.url).hostname;
+    const whitelist = await getWhitelist();
+    if (whitelist.includes(sourceHost)) {
+      // console.log("[Ad Blocker] ⏭ Pop-up tab ignored — source site whitelisted:", sourceHost);
+      return;
+    }
+  } catch {}
+
+  // Get click context from content script
+  const clickCtx = lastClickContext[sourceTabId];
+  const clickAge = clickCtx ? Date.now() - clickCtx.timestamp : Infinity;
+  const recentClick = clickAge < 2000;
+
+  // console.log("[Ad Blocker] 🔍 New tab opened:", {
+  //   url: url || "about:blank",
+  //   sourceTab: sourceTabId,
+  //   sourceHost,
+  //   clickContext: recentClick
+  //     ? { element: clickCtx.element, isInteractive: clickCtx.isInteractive, linkHref: clickCtx.linkHref }
+  //     : "no recent click",
+  // });
+
+  if (!recentClick) {
+    // console.log("[Ad Blocker] ⚠️ No recent click context — falling through to domain check only");
+  }
+
+  // BLOCK: recent click was on a non-interactive element → pop-up ad
+  if (recentClick && !clickCtx.isInteractive) {
+    // console.log("[Ad Blocker] 🚫 Closed pop-up tab — triggered by non-interactive click on:", clickCtx.element, "→", url);
+    chrome.tabs.remove(details.tabId);
+    return;
+  }
+
+  // BLOCK: recent click was on a link, but this tab goes to a different domain (hijack)
+  if (recentClick && clickCtx.linkHref && url && url !== "about:blank") {
+    try {
+      const linkHost = new URL(clickCtx.linkHref).hostname;
+      const popupHost = new URL(url).hostname;
+      if (linkHost !== popupHost && sourceHost !== popupHost) {
+        // console.log("[Ad Blocker] 🚫 Closed hijacked pop-up — clicked link →", linkHost, "but tab opened →", popupHost);
+        chrome.tabs.remove(details.tabId);
+        return;
+      }
+    } catch {}
+  }
+
+  if (!url || url === "about:blank") {
+    // console.log("[Ad Blocker] 🔍 Monitoring about:blank pop-up tab:", details.tabId);
+    setTimeout(async () => {
+      try {
+        const tab = await chrome.tabs.get(details.tabId);
+        if (tab.url && tab.url !== "about:blank") {
+          const matches = await chrome.declarativeNetRequest.getMatchedRules({
+            tabId: details.tabId,
+          });
+          if (matches.rulesMatchedInfo.length > 0) {
+            // console.log("[Ad Blocker] 🚫 Closed pop-up tab that redirected to blocked domain:", tab.url);
+            chrome.tabs.remove(details.tabId);
+          } else {
+            // console.log("[Ad Blocker] ✅ about:blank pop-up allowed — redirected to:", tab.url);
+          }
+        }
+      } catch {}
+    }, 1500);
+    return;
+  }
+
+  // For non-blank URLs, also check against domain blocklist
+  try {
+    const matches = await chrome.declarativeNetRequest.testMatchOutcome({
+      url,
+      type: "sub_frame",
+      initiator: new URL((await chrome.tabs.get(sourceTabId)).url).origin,
+    });
+    const blocked = matches.matchedRules.some((r) => r.action?.type === "block");
+    if (blocked) {
+      // console.log("[Ad Blocker] 🚫 Closed pop-up tab to blocked domain:", url);
+      chrome.tabs.remove(details.tabId);
+    } else {
+      // console.log("[Ad Blocker] ✅ Pop-up tab allowed:", url);
+    }
+  } catch {}
+});
+
 // --- Blocked count tracking ---
 // Use onRuleMatchedDebug for live counting, with a one-time
 // getMatchedRules catch-up when the popup opens (in case the
@@ -50,7 +159,7 @@ async function getCountForTab(tabId) {
       }
       catchUpDone[tabId] = true;
     } catch (err) {
-      console.warn("[AdBlocker] getMatchedRules catch-up failed:", err.message);
+      // console.warn("[AdBlocker] getMatchedRules catch-up failed:", err.message);
     }
   }
   return blockedCounts[tabId] || 0;
@@ -118,6 +227,20 @@ async function removeFromWhitelist(domain) {
 // --- Message handling ---
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Store click context from content script
+  if (message.type === "clickContext") {
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      lastClickContext[tabId] = message;
+      // console.log("[Ad Blocker] 📌 Click context received from tab", tabId + ":", {
+      //   element: message.element,
+      //   isInteractive: message.isInteractive,
+      //   linkHref: message.linkHref,
+      // });
+    }
+    return;
+  }
+
   if (message.type === "getBlockedCount") {
     getCountForTab(message.tabId).then((count) => sendResponse({ count }));
     return true;
